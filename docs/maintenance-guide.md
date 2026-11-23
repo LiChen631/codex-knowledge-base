@@ -1,6 +1,6 @@
 # 维护说明
 
-生成时间：2026-11-17T20:16:32+08:00
+生成时间：2026-11-23T10:20:49+08:00
 
 ## 一、日常命令
 
@@ -28,7 +28,7 @@ python scripts/kb.py serve --open           # 打开管理界面
 修改 `~/.codex/hooks.json` 后必须重新信任，否则 Codex 不会执行：
 
 ```powershell
-python scripts/trust_hooks.py "<home>
+python scripts/trust_hooks.py "<你的项目目录>"
 ```
 
 脚本会向 Codex 查询真实哈希并写入 `config.toml`，随后自动校验 `trustStatus=trusted`。

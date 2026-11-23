@@ -410,19 +410,97 @@ def _cosine(a: dict, b: dict) -> float:
     return num / (na * nb) if na and nb else 0.0
 
 
+def _load_synonyms() -> dict:
+    """读取 config/synonyms.yaml（极简 YAML 子集解析，零依赖）。"""
+    p = ROOT / "config" / "synonyms.yaml"
+    out = {}
+    try:
+        for line in p.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or ":" not in line:
+                continue
+            key, _, val = line.partition(":")
+            key = key.strip()
+            vals = [x.strip().strip("\"'") for x in val.strip().strip("[]").split(",")]
+            vals = [v for v in vals if v]
+            if key and vals:
+                out[key.lower()] = vals
+    except Exception:
+        pass
+    return out
+
+
+_SYNONYMS = None
+
+
+def expand_query(q: str) -> list:
+    """返回 [原查询, 展开词...]，用于多路召回。"""
+    global _SYNONYMS
+    if _SYNONYMS is None:
+        _SYNONYMS = _load_synonyms()
+    variants = [q]
+    ql = q.strip().lower()
+    for k, vs in _SYNONYMS.items():
+        if k == ql or (len(k) >= 2 and k in ql):
+            variants.extend(v for v in vs if v not in variants)
+    return variants[:5]
+
+
 def _fts_safe(q: str) -> str:
     return '"' + q.replace('"', ' ') + '"'
 
 
+def _rank(con, term: str, category, cat_clause, cat_args, add, weight, orig) -> None:
+    """对单个检索词跑一轮多路召回，按 weight 加权。"""
+    # 1) exact name
+    for row in con.execute("SELECT a.* FROM assets a WHERE lower(a.name)=lower(?)" + cat_clause,
+                           [term] + cat_args):
+        add(row, 100 * weight, "名称完全匹配" if term == orig else "同义词精确匹配")
+    # 2) name contains
+    for row in con.execute("SELECT a.* FROM assets a WHERE a.name LIKE ?" + cat_clause,
+                           ["%" + term + "%"] + cat_args):
+        add(row, 40 * weight, "名称包含" if term == orig else "同义词包含")
+    # 3) tags
+    for row in con.execute(
+            "SELECT a.* FROM assets a JOIN asset_tags t ON t.asset_id=a.id"
+            " WHERE lower(t.tag)=lower(?)" + cat_clause, [term] + cat_args):
+        add(row, 35 * weight, "标签匹配")
+    # 4) FTS5 trigram
+    if len(term) >= 3:
+        try:
+            for row in con.execute(
+                    "SELECT a.* FROM assets_fts f JOIN assets a ON a.id=f.id"
+                    " WHERE assets_fts MATCH ?" + cat_clause, [_fts_safe(term)] + cat_args):
+                add(row, 25 * weight, "全文索引" if term == orig else "同义词全文")
+        except sqlite3.Error:
+            pass
+    # 5) LIKE over descriptive fields
+    like = "%" + term + "%"
+    for row in con.execute(
+            "SELECT a.* FROM assets a WHERE (a.summary LIKE ? OR a.use_cases LIKE ?"
+            " OR a.notes LIKE ? OR a.invoke_method LIKE ? OR a.path LIKE ?)" + cat_clause,
+            [like, like, like, like, like] + cat_args):
+        add(row, 12 * weight, "描述包含" if term == orig else "同义词描述")
+    # 6) TF-IDF cosine
+    qv = _vector(term)
+    for row in con.execute(
+            "SELECT a.*, (SELECT group_concat(tag,' ') FROM asset_tags"
+            " WHERE asset_id=a.id) AS tagstr FROM assets a WHERE 1=1" + cat_clause, cat_args):
+        doc = " ".join(filter(None, [row["name"], row["summary"], row["use_cases"],
+                                     row["notes"], row["invoke_method"],
+                                     row["category"], row["tagstr"]]))
+        sim = _cosine(qv, _vector(doc))
+        if sim > 0.12:
+            add(row, sim * 30 * weight, "语义相似 %.2f" % sim)
+
+
 def search(query: str, category: str = None, limit: int = 20,
            include_history: bool = False) -> list[dict]:
-    """Hybrid retrieval: exact name/tag, FTS5 trigram, LIKE, then TF-IDF rerank.
-
-    Priority follows the spec: installed+verified first, then verified, then the rest.
-    """
+    """混合检索：精确 → 标签 → FTS5 → LIKE → TF-IDF，附生命周期加权与命中原因。"""
     q = (query or "").strip()
     if not q:
         return []
+    variants = expand_query(q)
     con = connect(readonly=True)
     try:
         cand: dict[str, dict] = {}
@@ -437,49 +515,11 @@ def search(query: str, category: str = None, limit: int = 20,
         cat_clause = " AND a.category=?" if category else ""
         cat_args = [category] if category else []
 
-        # 1) exact / prefix name
-        for row in con.execute("SELECT a.* FROM assets a WHERE lower(a.name)=lower(?)" + cat_clause,
-                               [q] + cat_args):
-            add(row, 100, "名称完全匹配")
-        for row in con.execute("SELECT a.* FROM assets a WHERE a.name LIKE ?" + cat_clause,
-                               ["%" + q + "%"] + cat_args):
-            add(row, 40, "名称包含")
-        # 2) tags
-        for row in con.execute(
-                "SELECT a.* FROM assets a JOIN asset_tags t ON t.asset_id=a.id"
-                " WHERE lower(t.tag)=lower(?)" + cat_clause, [q] + cat_args):
-            add(row, 35, "标签匹配")
-        # 3) FTS5 trigram (needs >= 3 chars for latin, >= 3 for cjk substring)
-        if len(q) >= 3:
-            try:
-                for row in con.execute(
-                        "SELECT a.* FROM assets_fts f JOIN assets a ON a.id=f.id"
-                        " WHERE assets_fts MATCH ?" + cat_clause, [_fts_safe(q)] + cat_args):
-                    add(row, 25, "全文索引")
-            except sqlite3.Error:
-                pass
-        # 4) LIKE over descriptive fields
-        like = "%" + q + "%"
-        for row in con.execute(
-                "SELECT a.* FROM assets a WHERE (a.summary LIKE ? OR a.use_cases LIKE ?"
-                " OR a.notes LIKE ? OR a.invoke_method LIKE ? OR a.path LIKE ?)" + cat_clause,
-                [like, like, like, like, like] + cat_args):
-            add(row, 12, "描述包含")
+        for i, term in enumerate(variants):
+            _rank(con, term, category, cat_clause, cat_args, add,
+                  1.0 if i == 0 else 0.55, q)
 
-        # 5) TF-IDF cosine rerank over the whole (small) corpus
-        qv = _vector(q)
-        corpus = list(con.execute("SELECT a.*, (SELECT group_concat(tag,' ') FROM asset_tags"
-                                  " WHERE asset_id=a.id) AS tagstr FROM assets a"
-                                  " WHERE 1=1" + cat_clause, cat_args))
-        for row in corpus:
-            doc = " ".join(filter(None, [
-                row["name"], row["summary"], row["use_cases"], row["notes"],
-                row["invoke_method"], row["category"], row["tagstr"]]))
-            sim = _cosine(qv, _vector(doc))
-            if sim > 0.12:
-                add(row, round(sim * 30, 2), "语义相似 %.2f" % sim)
-
-        # 6) usage bonus + lifecycle priority
+        # 生命周期与使用度加权
         prio = {"in_use": 12, "verified": 10, "pending_verification": 2,
                 "needs_update": -4, "expired": -10, "deprecated": -14,
                 "replaced": -14, "verify_failed": -8}
@@ -505,7 +545,6 @@ def search(query: str, category: str = None, limit: int = 20,
             seen = {o["id"] for o in out}
             for row in _search_history(con, q, limit - len(out)):
                 if row["id"] not in seen:
-                    row["category"] = row["category"] or "history"
                     out.append(row)
         return out
     finally:
