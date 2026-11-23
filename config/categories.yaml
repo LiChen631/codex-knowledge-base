@@ -1,0 +1,49 @@
+# 资产分类定义（与 kbcore.CATEGORIES 保持一致）
+categories:
+  plugin:
+    label: 插件与扩展
+    examples: [Codex 插件, ChatGPT 连接器, VS Code 扩展]
+  skill:
+    label: Skills 技能包
+    evidence: SKILL.md 存在即视为已安装
+  mcp:
+    label: MCP 服务
+    fields: [server, command, env_var_names, permission]
+  command:
+    label: 命令与终端操作
+    note: 由历史会话聚合出的命令签名（tool + verb）
+  script:
+    label: 脚本与程序
+  workflow:
+    label: 工作流
+  prompt:
+    label: 提示词
+  github_project:
+    label: GitHub 项目
+  troubleshooting:
+    label: 故障解决方案
+  software:
+    label: 软件与服务
+  environment:
+    label: 环境与依赖
+  service:
+    label: 外部服务
+  other:
+    label: 其他
+
+lifecycle:
+  - pending_verification
+  - verified
+  - in_use
+  - needs_update
+  - expired
+  - deprecated
+  - replaced
+  - verify_failed
+
+evidence:
+  A: 存在实际安装与运行证据
+  B: 存在实际使用或执行记录
+  C: 存在配置文件或明确安装记录
+  D: 仅在历史会话中讨论或推荐
+  E: 来源不明，需进一步核实

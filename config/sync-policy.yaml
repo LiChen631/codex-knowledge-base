@@ -1,0 +1,20 @@
+# Git 同步策略
+repo:
+  name: codex-global-knowledge-base
+  visibility: public           # 公开分发版
+  remote: ""                   # 首次推送时由 git remote add 设置
+  branch: main
+
+rules:
+  - 提交前必须运行 scripts/kb.py sync（内置密钥扫描，发现疑似凭据即中止）
+  - 禁止提交 database/*.db-wal、*.db-shm、logs/import/ 下的解压缓存
+  - 重要更新（新增已验证核心工具、结构变更、全局接入变更、安全策略变更）立即提交
+  - 普通更新可批量提交，提交信息使用 "kb: <动作> <对象>" 格式
+
+ignore:
+  - "logs/import/"
+  - "logs/*.jsonl"
+  - "exports/"
+  - "backups/"
+  - "*.db-wal"
+  - "*.db-shm"

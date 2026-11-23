@@ -1,0 +1,23 @@
+# .gitignore -- 知识库仓库
+# 数据库运行时文件（数据库本体随仓库一起版本化，便于回滚）
+*.db-wal
+*.db-shm
+# 历史导入解压缓存（体积大、可重建）
+logs/import/
+logs/*.jsonl
+# 导出与临时文件
+exports/
+tmp/
+__pycache__/
+*.pyc
+# 备份（本地保留，不进 Git）
+backups/
+# 编辑器
+.vscode/
+.idea/
+
+# 数据库本体（44MB，含 8k+ 历史条目）：本地保留，curated 资产走 database/seed.json
+database/knowledge.db
+
+# 脱敏规则（含私有业务实体名，仅本地使用）
+config/redact-rules.json

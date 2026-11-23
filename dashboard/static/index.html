@@ -1,0 +1,287 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Codex 全局知识库</title>
+<style>
+:root{
+  --bg:#0d1117; --panel:#151b23; --panel2:#1b232d; --line:#232c38;
+  --fg:#e6edf3; --muted:#8b98a8; --accent:#4c9aff; --ok:#3fb950; --warn:#d29922; --bad:#f85149;
+  --radius:12px;
+}
+*{box-sizing:border-box}
+body{margin:0;font:14px/1.6 "Segoe UI","Microsoft YaHei",system-ui,sans-serif;background:var(--bg);color:var(--fg)}
+a{color:var(--accent);text-decoration:none}
+.layout{display:grid;grid-template-columns:220px 1fr;min-height:100vh}
+aside{background:var(--panel);border-right:1px solid var(--line);padding:18px 12px;position:sticky;top:0;height:100vh;overflow:auto}
+.brand{font-size:16px;font-weight:600;padding:6px 10px 16px;letter-spacing:.4px}
+.brand small{display:block;color:var(--muted);font-weight:400;font-size:11px;margin-top:2px}
+nav button{display:block;width:100%;text-align:left;background:none;border:0;color:var(--muted);
+  padding:9px 12px;border-radius:8px;cursor:pointer;font-size:13.5px;margin-bottom:2px}
+nav button:hover{background:var(--panel2);color:var(--fg)}
+nav button.active{background:#1f3a5f;color:#cfe4ff}
+main{padding:22px 26px 60px;max-width:1400px}
+header{display:flex;align-items:center;gap:14px;margin-bottom:18px;flex-wrap:wrap}
+h1{font-size:19px;margin:0;font-weight:600}
+h2{font-size:15px;margin:22px 0 10px;color:#c9d4e0;font-weight:600}
+input,select,button{font:inherit}
+input[type=search],input[type=text],select{background:var(--panel2);border:1px solid var(--line);color:var(--fg);
+  padding:8px 12px;border-radius:8px;outline:none;min-width:220px}
+input:focus,select:focus{border-color:var(--accent)}
+.btn{background:var(--panel2);border:1px solid var(--line);color:var(--fg);padding:8px 14px;border-radius:8px;cursor:pointer}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:#1f4f8f;border-color:#2a6bbd}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:14px 16px}
+.card .k{color:var(--muted);font-size:12px}
+.card .v{font-size:26px;font-weight:600;margin-top:4px}
+.card .s{color:var(--muted);font-size:11.5px;margin-top:2px}
+table{width:100%;border-collapse:collapse;background:var(--panel);border-radius:var(--radius);overflow:hidden}
+th,td{padding:9px 12px;text-align:left;border-bottom:1px solid var(--line);vertical-align:top;font-size:13px}
+th{background:var(--panel2);color:var(--muted);font-weight:500;font-size:12px;position:sticky;top:0}
+tr:hover td{background:#182029}
+.pill{display:inline-block;padding:1px 8px;border-radius:999px;font-size:11.5px;border:1px solid var(--line);color:var(--muted)}
+.pill.ok{color:var(--ok);border-color:#1d4429;background:#11251a}
+.pill.warn{color:var(--warn);border-color:#4a3a12;background:#241c07}
+.pill.bad{color:var(--bad);border-color:#4b1d1b;background:#2a1210}
+.mono{font-family:Consolas,"Cascadia Mono",monospace;font-size:12px;color:#b9c6d4;word-break:break-all}
+.muted{color:var(--muted)}
+.row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:12px}
+pre{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:12px;overflow:auto;font-size:12px}
+.detail dl{display:grid;grid-template-columns:130px 1fr;gap:6px 14px}
+.detail dt{color:var(--muted);font-size:12.5px}
+.detail dd{margin:0;word-break:break-word}
+.empty{color:var(--muted);padding:24px;text-align:center;background:var(--panel);border-radius:var(--radius)}
+.spin{color:var(--muted);padding:16px}
+dialog{background:var(--panel);color:var(--fg);border:1px solid var(--line);border-radius:var(--radius);max-width:900px;width:92%}
+dialog::backdrop{background:#000a}
+.close{float:right}
+</style>
+</head>
+<body>
+<div class="layout">
+<aside>
+  <div class="brand">Codex 全局知识库<small id="rootPath">D:\Codex-Knowledge-Base</small></div>
+  <nav id="nav"></nav>
+</aside>
+<main>
+  <header>
+    <h1 id="title">仪表盘</h1>
+    <input id="globalQ" type="search" placeholder="全局搜索：工具 / 命令 / 报错 / 技能（回车）">
+    <span class="muted" id="hint"></span>
+  </header>
+  <div id="view"><div class="spin">加载中…</div></div>
+</main>
+</div>
+<dialog id="dlg"><div class="close"><button class="btn" onclick="document.getElementById('dlg').close()">关闭</button></div><div id="dlgBody"></div></dialog>
+<script>
+const VIEWS=[
+ ['dashboard','仪表盘'],['assets','资产分类'],['search','搜索'],['commands','命令索引'],
+ ['errors','故障库'],['history','历史记录'],['docs','文档'],['git','版本历史'],
+ ['health','健康检查'],['ops','维护']
+];
+const nav=document.getElementById('nav'), view=document.getElementById('view');
+let state={view:'dashboard', params:{}};
+function el(h){const t=document.createElement('template');t.innerHTML=h.trim();return t.content.firstElementChild;}
+async function api(p,opt){const r=await fetch(p,opt);if(!r.ok)throw new Error(await r.text());return r.json();}
+function pill(txt,cls){return `<span class="pill ${cls||''}">${txt||'-'}</span>`;}
+function vpill(inst,ver){
+  const i=inst==='installed'?pill('已安装','ok'):(inst==='not_installed'?pill('未安装','warn'):pill(inst||'未知'));
+  const v=ver==='verified'?pill('已验证','ok'):(ver==='failed'?pill('验证失败','bad'):pill(ver||'未验证'));
+  return i+' '+v;
+}
+nav.innerHTML=VIEWS.map(([k,l])=>`<button data-k="${k}">${l}</button>`).join('');
+nav.onclick=e=>{const k=e.target.dataset.k;if(k){go(k);}};
+function setActive(){[...nav.querySelectorAll('button')].forEach(b=>b.classList.toggle('active',b.dataset.k===state.view));}
+function go(k,params){state={view:k,params:params||{}};setActive();
+  const t=VIEWS.find(v=>v[0]===k);document.getElementById('title').textContent=t?t[1]:k;
+  ({dashboard:renderDashboard,assets:renderAssets,search:renderSearch,commands:renderCommands,
+    errors:renderErrors,history:renderHistory,docs:renderDocs,health:renderHealth,ops:renderOps}[k]||renderDashboard)();}
+document.getElementById('globalQ').addEventListener('keydown',e=>{
+  if(e.key==='Enter'){const q=e.target.value.trim();if(q)go('search',{q});}});
+
+/* ---------- dashboard ---------- */
+async function renderDashboard(){
+  view.innerHTML='<div class="spin">加载中…</div>';
+  const s=await api('/api/stats');
+  const c=s.by_category||{};
+  const cards=[
+    ['资产总数',s.assets,'全部十类资产'],['已验证',s.verified,'可放心复用'],
+    ['未验证',s.unverified,'需实测'],['已安装',s.installed,'本机存在'],
+    ['Skills',c.skill||0,'技能包'],['MCP',c.mcp||0,'服务'],
+    ['插件',c.plugin||0,'Codex 插件'],['脚本',c.script||0,'可复用脚本'],
+    ['GitHub',c.github_project||0,'引用仓库'],['历史记录',s.history_items,'会话条目'],
+    ['命令签名',s.commands,'去重后'],['故障',s.errors,'错误签名']
+  ];
+  view.innerHTML=`<div class="cards">${cards.map(([k,v,sub])=>
+    `<div class="card"><div class="k">${k}</div><div class="v">${v??0}</div><div class="s">${sub}</div></div>`).join('')}</div>
+    <h2>分类分布</h2><div class="cards">${Object.entries(c).map(([k,v])=>
+      `<div class="card"><div class="k">${k}</div><div class="v">${v}</div></div>`).join('')||'<div class="empty">暂无</div>'}</div>
+    <h2>最近变更</h2><div id="ev"></div>`;
+  const ev=await api('/api/events?limit=15');
+  document.getElementById('ev').innerHTML=ev.length?`<table><thead><tr><th>时间</th><th>对象</th><th>事件</th><th>说明</th></tr></thead><tbody>
+    ${ev.map(e=>`<tr><td class="mono">${(e.happened_at||'').slice(0,19).replace('T',' ')}</td>
+    <td>${e.name||e.asset_id||''}</td><td>${e.event}</td><td class="muted">${(e.detail||'').slice(0,80)}</td></tr>`).join('')}
+    </tbody></table>`:'<div class="empty">暂无</div>';
+}
+
+/* ---------- assets ---------- */
+async function renderAssets(){
+  const cat=state.params.category||'';
+  const cats=['','plugin','skill','mcp','command','script','workflow','prompt','github_project','troubleshooting','software','environment'];
+  view.innerHTML=`<div class="row">
+    <select id="catSel">${cats.map(c=>`<option value="${c}" ${c===cat?'selected':''}>${c||'全部分类'}</option>`).join('')}</select>
+    <select id="stSel"><option value="">全部状态</option><option value="installed">已安装</option>
+      <option value="verified">已验证</option><option value="unverified">未验证</option></select>
+    <input id="kw" type="search" placeholder="按名称/说明过滤">
+    </div><div id="tbl" class="spin">加载中…</div>`;
+  const load=async()=>{
+    const q=new URLSearchParams({category:document.getElementById('catSel').value,
+      state:document.getElementById('stSel').value,q:document.getElementById('kw').value,limit:800});
+    const rows=await api('/api/assets?'+q);
+    const t=document.getElementById('tbl');
+    t.className='';
+    t.innerHTML=rows.length?`<table><thead><tr><th>名称</th><th>分类</th><th>状态</th><th>证据</th><th>说明</th></tr></thead><tbody>
+      ${rows.map(r=>`<tr data-id="${r.id}" style="cursor:pointer"><td>${r.name}</td><td class="muted">${r.category}</td>
+      <td>${vpill(r.install_status,r.verify_status)}</td><td>${r.evidence_level||'-'}</td>
+      <td class="muted">${(r.summary||'').slice(0,90)}</td></tr>`).join('')}</tbody></table>`
+      :'<div class="empty">没有匹配资产</div>';
+    t.onclick=e=>{const tr=e.target.closest('tr[data-id]');if(tr)showAsset(tr.dataset.id);};
+  };
+  ['catSel','stSel'].forEach(id=>document.getElementById(id).onchange=load);
+  document.getElementById('kw').oninput=()=>{clearTimeout(window._t);window._t=setTimeout(load,220);};
+  load();
+}
+async function showAsset(id){
+  const dlg=document.getElementById('dlg'), body=document.getElementById('dlgBody');
+  body.innerHTML='<div class="spin">加载中…</div>';dlg.showModal();
+  const a=await api('/api/asset/'+encodeURIComponent(id));
+  const skip=new Set(['events','verifications','links_out','links_in','tags']);
+  const kv=Object.entries(a).filter(([k,v])=>!skip.has(k)&&v!==null&&v!=='').map(([k,v])=>
+    `<dt>${k}</dt><dd class="mono">${String(v).replace(/</g,'&lt;')}</dd>`).join('');
+  body.innerHTML=`<div class="detail"><h2 style="margin-top:0">${a.name}</h2>
+    <div class="row">${vpill(a.install_status,a.verify_status)} ${pill(a.lifecycle_status)} ${pill('证据 '+(a.evidence_level||'-'))}
+    ${(a.tags||[]).map(t=>pill(t)).join(' ')}</div>
+    <dl>${kv}</dl>
+    ${(a.links_out||[]).length?`<h2>依赖/关联</h2><ul>${a.links_out.map(l=>`<li>${l.relation} → <a href="#" onclick="showAsset('${l.dst_id}');return false">${l.dst_id}</a> ${l.note||''}</li>`).join('')}</ul>`:''}
+    <h2>依赖 / 影响链</h2><div id="depsBox" class="muted">加载中…</div>
+    <h2>历史事件</h2>${(a.events||[]).length?`<table><tbody>${a.events.map(e=>
+      `<tr><td class="mono">${(e.happened_at||'').slice(0,19).replace('T',' ')}</td><td>${e.event}</td><td class="muted">${(e.detail||'').slice(0,120)}</td></tr>`).join('')}</tbody></table>`:'<div class="muted">无</div>'}
+    <h2>验证记录</h2>${(a.verifications||[]).length?`<table><tbody>${a.verifications.map(v=>
+      `<tr><td>${v.result}</td><td class="mono">${(v.command||'').slice(0,90)}</td><td class="muted">${(v.verified_at||'').slice(0,19)}</td></tr>`).join('')}</tbody></table>`:'<div class="muted">无</div>'}
+    </div>`;
+  api('/api/deps/'+encodeURIComponent(id)).then(d=>{
+    const box=document.getElementById('depsBox');
+    if(!box) return;
+    const fmt=(arr,dir)=>arr.length?('<ul>'+arr.map(x=>
+      `<li style="margin-left:${(x.lvl-1)*14}px">${dir==='down'?'→ ':'← '}${x.name||x.id} <span class="muted">[${x.category||'?'}] ${x.relation||''}</span></li>`).join('')+'</ul>'):'<div class="muted">无</div>';
+    box.innerHTML='<div class="muted">向下（依赖）</div>'+fmt(d.depends_on,'down')+
+                  '<div class="muted">向上（被依赖）</div>'+fmt(d.required_by,'up');
+  }).catch(()=>{});
+}
+
+/* ---------- search ---------- */
+async function renderSearch(){
+  const q=state.params.q||'';
+  view.innerHTML=`<div class="row"><input id="sq" type="search" style="flex:1" value="${q.replace(/"/g,'&quot;')}"
+    placeholder="输入关键词，如：数模 / docker / ModuleNotFound / 论文"><button class="btn primary" id="sb">检索</button></div>
+    <div id="sres" class="spin">加载中…</div>`;
+  const run=async()=>{
+    const v=document.getElementById('sq').value.trim();
+    if(!v){document.getElementById('sres').innerHTML='<div class="empty">请输入关键词</div>';return;}
+    document.getElementById('sres').innerHTML='<div class="spin">检索中…</div>';
+    const rows=await api('/api/search?q='+encodeURIComponent(v)+'&limit=30');
+    document.getElementById('sres').innerHTML=rows.length?`<table><thead><tr><th>名称</th><th>类型</th><th>得分</th><th>命中原因</th><th>说明</th></tr></thead><tbody>
+      ${rows.map(r=>`<tr data-id="${r.id}" style="cursor:pointer"><td>${r.name}</td><td class="muted">${r.category}</td>
+      <td>${r.score}</td><td class="muted">${(r.why||[]).join(' / ')}</td><td class="muted">${(r.summary||'').slice(0,90)}</td></tr>`).join('')}
+      </tbody></table>`:'<div class="empty">没有命中</div>';
+    document.getElementById('sres').onclick=e=>{const tr=e.target.closest('tr[data-id]');if(tr&&!tr.dataset.id.startsWith('history:'))showAsset(tr.dataset.id);};
+  };
+  document.getElementById('sb').onclick=run;document.getElementById('sq').onkeydown=e=>{if(e.key==='Enter')run();};
+  if(q)run();
+}
+
+/* ---------- commands / errors / history ---------- */
+async function renderCommands(){
+  const rows=await api('/api/commands?limit=300');
+  view.innerHTML=`<p class="muted">按使用次数排序的命令签名；ok/fail 来自历史执行状态。</p>
+   <table><thead><tr><th>签名</th><th>次数</th><th>成功</th><th>失败</th><th>风险</th><th>最近使用</th><th>示例</th></tr></thead><tbody>
+   ${rows.map(r=>`<tr><td>${r.signature}</td><td>${r.uses}</td><td>${r.ok_count}</td>
+     <td>${r.fail_count>0?`<span style="color:var(--bad)">${r.fail_count}</span>`:0}</td>
+     <td>${r.risk==='high'?pill('高风险','bad'):pill('常规')}</td>
+     <td class="mono">${(r.last_seen||'').slice(0,10)}</td>
+     <td class="mono muted">${(r.sample||'').slice(0,70).replace(/</g,'&lt;')}</td></tr>`).join('')}</tbody></table>`;
+}
+async function renderErrors(){
+  const rows=await api('/api/errors?limit=300');
+  view.innerHTML=`<p class="muted">从历史执行中提取的错误签名（仅统计强匹配，避免把正常输出误判为错误）。</p>
+   <table><thead><tr><th>次数</th><th>错误签名</th><th>首次</th><th>最近</th><th>状态</th></tr></thead><tbody>
+   ${rows.map(r=>`<tr><td>${r.occurrences}</td><td class="mono">${(r.signature||'').slice(0,120).replace(/</g,'&lt;')}</td>
+     <td class="mono">${(r.first_seen||'').slice(0,10)}</td><td class="mono">${(r.last_seen||'').slice(0,10)}</td>
+     <td>${r.resolved?pill('已解决','ok'):pill('待确认','warn')}</td></tr>`).join('')}</tbody></table>`;
+}
+async function renderHistory(){
+  const [rows,src]=await Promise.all([api('/api/history?limit=200'),api('/api/sources')]);
+  view.innerHTML=`<h2>数据源</h2><table><thead><tr><th>来源</th><th>状态</th><th>条目</th><th>线程</th><th>大小</th><th>说明</th></tr></thead><tbody>
+    ${src.map(s=>`<tr><td>${s.label}</td><td>${s.status==='scanned'?pill('已扫描','ok'):pill(s.status,'warn')}</td>
+    <td>${s.items}</td><td>${s.threads}</td><td class="mono">${(s.bytes/1048576).toFixed(1)} MB</td>
+    <td class="muted">${(s.detail||'').slice(0,80)}</td></tr>`).join('')}</tbody></table>
+    <h2>最近条目</h2><table><thead><tr><th>时间</th><th>类型</th><th>名称</th><th>详情</th></tr></thead><tbody>
+    ${rows.map(r=>`<tr><td class="mono">${(r.ts||'').slice(0,16)}</td><td class="muted">${r.kind}</td>
+    <td>${(r.name||'').slice(0,50)}</td><td class="mono muted">${(r.detail||'').slice(0,90).replace(/</g,'&lt;')}</td></tr>`).join('')}</tbody></table>`;
+}
+async function renderDocs(){
+  view.innerHTML=`<div class="row"><input id="dq" type="search" placeholder="搜索文档内容"><button class="btn" id="db">搜索</button></div><div id="dres"></div>`;
+  const run=async()=>{const v=document.getElementById('dq').value.trim();
+    const rows=await api('/api/docs?q='+encodeURIComponent(v));
+    document.getElementById('dres').innerHTML=rows.length?`<table><thead><tr><th>路径</th><th>标题</th><th>片段</th></tr></thead><tbody>
+      ${rows.map(r=>`<tr><td class="mono">${r.path}</td><td>${r.title}</td><td class="muted">${(r.snippet||'').replace(/</g,'&lt;')}</td></tr>`).join('')}</tbody></table>`
+      :'<div class="empty">没有匹配</div>';};
+  document.getElementById('db').onclick=run;
+  run();
+}
+
+/* ---------- git ---------- */
+async function renderGit(){
+  view.innerHTML='<div class="spin">加载中…</div>';
+  const d=await api('/api/gitlog?limit=60');
+  view.innerHTML=`<div class="row"><span class="muted">远程：${d.remote||'未配置'}</span>
+    <span class="muted">未提交变更：${d.dirty} 项</span></div>
+    <table><thead><tr><th>提交</th><th>时间</th><th>说明</th></tr></thead><tbody>
+    ${d.commits.map(c=>`<tr><td class="mono">${c.hash}</td><td class="mono">${c.date}</td>
+      <td>${c.subject.replace(/</g,'&lt;')}</td></tr>`).join('')}</tbody></table>`;
+}
+
+/* ---------- health / ops ---------- */
+async function renderHealth(){
+  view.innerHTML='<div class="spin">检查中…</div>';
+  const h=await api('/api/health');
+  const items=h.checks||[];
+  view.innerHTML=`<div class="row"><button class="btn" onclick="renderHealth()">重新检查</button>
+    <span class="muted">生成于 ${h.generated_at||''}</span></div>
+    <table><thead><tr><th>检查项</th><th>状态</th><th>说明</th></tr></thead><tbody>
+    ${items.map(c=>`<tr><td>${c.name}</td><td>${c.status==='ok'?pill('正常','ok'):(c.status==='warn'?pill('注意','warn'):pill('异常','bad'))}</td>
+    <td class="muted mono">${(c.detail||'').slice(0,140).replace(/</g,'&lt;')}</td></tr>`).join('')}</tbody></table>
+    <h2>月度报告</h2><p class="muted">最近一次：${h.monthly_last||'无'}　文件：${h.monthly_path||'-'}</p>`;
+}
+async function renderOps(){
+  view.innerHTML=`<h2>常用操作</h2>
+  <div class="row"><button class="btn" id="bk">立即备份</button>
+  <button class="btn" id="hc">运行健康检查</button></div><pre id="opout">就绪。</pre>
+  <h2>命令行</h2><pre>cd D:\\Codex-Knowledge-Base
+python scripts/kb.py search "关键词"
+python scripts/kb.py import-history
+python scripts/kb.py import-assets
+python scripts/kb.py health --monthly
+python scripts/kb.py backup --tag manual
+powershell -File scripts/sync.ps1</pre>`;
+  document.getElementById('bk').onclick=async()=>{const r=await api('/api/backup',{method:'POST',headers:{'Content-Type':'application/json'},body:'{"tag":"web"}'}).catch(e=>({error:String(e)}));
+    document.getElementById('opout').textContent=JSON.stringify(r,null,2);};
+  document.getElementById('hc').onclick=async()=>{const r=await api('/api/health',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'}).catch(e=>({error:String(e)}));
+    document.getElementById('opout').textContent=JSON.stringify(r,null,2);};
+}
+go('dashboard');
+</script>
+</body>
+</html>

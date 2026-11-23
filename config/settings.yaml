@@ -1,0 +1,42 @@
+# Codex Global Knowledge Base -- 主配置
+# 本文件只描述路径与开关，不存放任何凭据。
+version: "1.0.0"
+root: "."          # 相对本仓库根目录；也可用环境变量 KB_ROOT 覆盖
+
+database:
+  path: "database/knowledge.db"
+  journal: "WAL"
+  min_sqlite: "3.34"          # 需要 FTS5 trigram 分词器
+  migrations: "database/migrations"
+
+search:
+  engine: "sqlite-fts5"
+  tokenizer: "trigram"        # 对中文无需分词即可子串匹配
+  fallback: "like+tfidf"
+  semantic:
+    method: "char-bigram-tfidf"   # 全本地、零依赖、无需嵌入模型
+    min_similarity: 0.12
+  default_limit: 15
+
+dashboard:
+  host: "127.0.0.1"           # 只允许本机访问
+  port: 8787
+  allow_write: false          # 需要写操作时用 --allow-write 启动
+  token_env: "KB_DASH_TOKEN"
+
+hooks:
+  session_start: "scripts/hooks/kb_session_start.py"
+  user_prompt_submit: "scripts/hooks/kb_prompt_submit.py"
+  stop: "scripts/hooks/kb_stop.py"
+  config: "~/.codex/hooks.json"
+  trust_script: "scripts/trust_hooks.py"
+
+health:
+  monthly_cron_hint: "每月首次会话由 SessionStart hook 提示执行"
+  report_dir: "reports/monthly"
+  max_backup_age_days: 14
+
+backup:
+  dir: "backups"
+  keep: 30
+  include: ["database/knowledge.db", "config", "database/migrations", "AGENTS.md", "README.md", "CHANGELOG.md"]
