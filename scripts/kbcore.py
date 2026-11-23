@@ -749,6 +749,7 @@ def stats() -> dict:
             "recent_events": [dict(r) for r in con.execute(
                 "SELECT e.asset_id, a.name, e.event, e.detail, e.happened_at FROM asset_events e"
                 " LEFT JOIN assets a ON a.id=e.asset_id ORDER BY e.id DESC LIMIT 12")],
+            "root": str(ROOT),
             "recent_history": [dict(r) for r in con.execute(
                 "SELECT kind,name,thread_title,ts FROM history_items ORDER BY id DESC LIMIT 12")],
         }

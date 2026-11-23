@@ -62,7 +62,7 @@ dialog::backdrop{background:#000a}
 <body>
 <div class="layout">
 <aside>
-  <div class="brand">Codex 全局知识库<small id="rootPath">D:\Codex-Knowledge-Base</small></div>
+  <div class="brand">Codex 全局知识库<small id="rootPath">本地知识库</small></div>
   <nav id="nav"></nav>
 </aside>
 <main>
@@ -105,13 +105,14 @@ document.getElementById('globalQ').addEventListener('keydown',e=>{
 async function renderDashboard(){
   view.innerHTML='<div class="spin">加载中…</div>';
   const s=await api('/api/stats');
+  if (s.root) document.getElementById('rootPath').textContent = s.root;
   const c=s.by_category||{};
   const cards=[
     ['资产总数',s.assets,'全部十类资产'],['已验证',s.verified,'可放心复用'],
     ['未验证',s.unverified,'需实测'],['已安装',s.installed,'本机存在'],
     ['Skills',c.skill||0,'技能包'],['MCP',c.mcp||0,'服务'],
     ['插件',c.plugin||0,'Codex 插件'],['脚本',c.script||0,'可复用脚本'],
-    ['GitHub',c.github_project||0,'引用仓库'],['历史记录',s.history_items,'会话条目'],
+    ['GitHub',c.github_project||0,'引用仓库'],['历史记录',s.history_items, s.history_items ? '从你的会话导入' : '运行 import-history 生成'],
     ['命令签名',s.commands,'去重后'],['故障',s.errors,'错误签名']
   ];
   view.innerHTML=`<div class="cards">${cards.map(([k,v,sub])=>
