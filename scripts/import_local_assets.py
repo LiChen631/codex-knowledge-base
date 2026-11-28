@@ -68,12 +68,35 @@ def first_para(text: str, limit=240) -> str:
     return ""
 
 
+def _project_skill_roots() -> list:
+    """项目级 skills 目录：KB_SKILL_ROOTS 优先（分号分隔），否则探测常见位置。"""
+    env = os.environ.get("KB_SKILL_ROOTS", "").strip()
+    if env:
+        return [Path(x) for x in env.split(";") if x.strip()]
+    here = kb.ROOT
+    cands = [
+        Path(r"D:\codex") / ".agents" / "skills",
+        Path.cwd() / ".agents" / "skills",
+        here.parent / ".agents" / "skills",
+    ]
+    seen, out = set(), []
+    for c in cands:
+        k = str(c).lower()
+        if k not in seen:
+            seen.add(k)
+            out.append(c)
+    return out
+
+
 def import_skills(con) -> int:
     roots = [
         (CODEX / "skills", "codex-system"),
         (AGENTS / "skills", "personal"),
-        (Path.cwd() / ".agents" / "skills", "project:local"),
     ]
+    # 项目级 skills：环境变量优先，其次扫描常见工作目录
+    for cand in _project_skill_roots():
+        if cand.exists():
+            roots.append((cand, "project:%s" % cand.parent.parent.name or "local"))
     for mroot in sorted((CODEX / "plugins" / "cache").glob("*/*")):
         if (mroot / "skills").is_dir():
             roots.append((mroot / "skills", "plugin:%s" % mroot.name))

@@ -152,11 +152,23 @@ def clean(text: str) -> str:
     return ANSI_RE.sub("", text or "")
 
 
+NOISE_RE = re.compile(
+    r"(?i)(\[troubleshooting\]|\[workflow\]|\[skill\]|\[software\]|\[script\]|"
+    r"\[mcp\]|\[github_project\]|score=|复用前请核对|命中知识库|知识库已加载|"
+    r"Exception class for|__doc__|docstring)")
+NUMERIC_NOISE_RE = re.compile(r"^\s*-?\s*\d+\s+\w+\s+(None|\d+|True|False)\b")
+QUOTE_NOISE_RE = re.compile('"' * 3)
+
+
 def _is_error_line(line: str) -> bool:
     l = line.strip()
     if len(l) < 12 or len(l) > 400:
         return False
     if CODE_LINE_RE.match(l) or GENERIC_RE.match(l):
+        return False
+    if NOISE_RE.search(l) or NUMERIC_NOISE_RE.match(l):
+        return False
+    if QUOTE_NOISE_RE.search(l):
         return False
     return bool(STRONG_ERR.search(l))
 

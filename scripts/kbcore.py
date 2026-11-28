@@ -260,11 +260,32 @@ def upsert_asset(con: sqlite3.Connection, data: dict, tags=None, links=None, eve
     if existing and existing["category"]:
         category = data.get("category") or existing["category"]
     if not existing:
-        dup = con.execute("SELECT id FROM assets WHERE name=? AND category=?",
-                          (name, category)).fetchone()
-        if dup:
-            aid = dup["id"]
+        # 同名同类别：若有多条（例如手工登记的 id 与扫描出的 id 不同），优先合并到
+        # "带真实路径 / 证据等级更高" 的那一条，避免留下重复条目。
+        dups = list(con.execute(
+            "SELECT id,path,evidence_level FROM assets WHERE name=? AND category=?",
+            (name, category)))
+        if dups:
+            def _better(r):
+                return (bool(r["path"]), {"A": 5, "B": 4, "C": 3, "D": 2, "E": 1}.get(
+                    r["evidence_level"] or "E", 0))
+            dups.sort(key=_better, reverse=True)
+            keep = dups[0]["id"]
+            incoming_has_path = bool(data.get("path"))
+            if incoming_has_path and not dups[0]["path"] and len(dups) > 1:
+                keep = dups[0]["id"]
+            aid = keep
             existing = _get(con, "assets", aid)
+            # 其余重复条目合并后删除
+            for r in dups[1:]:
+                note = "合并自 %s" % r["id"]
+                con.execute("UPDATE asset_tags SET asset_id=? WHERE asset_id=? AND tag NOT IN"
+                            " (SELECT tag FROM asset_tags WHERE asset_id=?)", (aid, r["id"], aid))
+                con.execute("DELETE FROM asset_tags WHERE asset_id=?", (r["id"],))
+                con.execute("DELETE FROM asset_links WHERE src_id=? OR dst_id=?", (r["id"], r["id"]))
+                con.execute("DELETE FROM assets_fts WHERE id=?", (r["id"],))
+                con.execute("DELETE FROM assets WHERE id=?", (r["id"],))
+                add_event(con, aid, "noted", note)
     payload = {}
     for k in _ASSET_FIELDS:
         if k in data and data[k] is not None:

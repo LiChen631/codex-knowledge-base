@@ -25,11 +25,20 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import kbcore as kb  # noqa: E402
 
 def _roots():
-    """公开版：默认扫描知识库自身与当前目录，可用 KB_SCAN_ROOTS 覆盖（分号分隔）。"""
+    """扫描根目录：KB_SCAN_ROOTS 环境变量 > config/local-paths.json > 默认。"""
     env = os.environ.get("KB_SCAN_ROOTS", "").strip()
     if env:
         return [Path(x) for x in re.split(r"[;]", env) if x.strip()]
     here = Path(__file__).resolve().parent.parent
+    cfg = here / "config" / "local-paths.json"
+    if cfg.exists():
+        try:
+            import json
+            roots = json.loads(cfg.read_text(encoding="utf-8")).get("scan_roots") or []
+            if roots:
+                return [Path(x) for x in roots]
+        except Exception:
+            pass
     return [here, Path.cwd()]
 
 

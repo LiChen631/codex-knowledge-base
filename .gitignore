@@ -21,3 +21,4 @@ database/knowledge.db
 
 # 脱敏规则（含私有业务实体名，仅本地使用）
 config/redact-rules.json
+config/local-paths.json

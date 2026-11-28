@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -39,25 +40,56 @@ def gh_api(path: str):
         return None, str(e)
 
 
-def audit_github(con, limit=60, pause=0.15):
+def _probe_repo(slug: str) -> dict:
+    """单个仓库：一次 GraphQL 拿到 stars/license/pushedAt/archived/latestRelease。"""
+    q = ('{repository(owner:"%s",name:"%s"){stargazersCount isArchived pushedAt '
+         'licenseInfo{spdxId} releases(last:1){nodes{tagName}}}}') % tuple(slug.split("/", 1))
+    r = subprocess.run(["gh", "api", "graphql", "-f", "query=" + q],
+                       capture_output=True, text=True, encoding="utf-8", errors="replace")
+    if r.returncode != 0:
+        return {"slug": slug, "error": (r.stderr or "")[:160]}
+    try:
+        repo = (json.loads(r.stdout).get("data") or {}).get("repository")
+    except Exception as e:
+        return {"slug": slug, "error": str(e)[:120]}
+    if not repo:
+        return {"slug": slug, "error": "not found"}
+    rel = ((repo.get("releases") or {}).get("nodes") or [{}])
+    return {
+        "slug": slug,
+        "stars": repo.get("stargazersCount"),
+        "archived": bool(repo.get("isArchived")),
+        "pushed": repo.get("pushedAt") or "",
+        "license": ((repo.get("licenseInfo") or {}) or {}).get("spdxId") or "",
+        "release": (rel[0] if rel else {}).get("tagName") or "",
+    }
+
+
+def audit_github(con, limit=80, workers=8):
     rows = list(con.execute(
         "SELECT id,name,source_url,version,lifecycle_status FROM assets"
         " WHERE category='github_project' AND source_url LIKE 'https://github.com/%'"
         " ORDER BY usage_count DESC LIMIT ?", (limit,)))
-    out = []
+    slugs = []
     for r in rows:
-        slug = r["source_url"].split("github.com/", 1)[1].strip("/")
-        info, err = gh_api("repos/" + slug)
-        if not info:
-            out.append({"name": r["name"], "state": "error", "detail": err or "无返回"})
-            time.sleep(pause)
+        slug = r["source_url"].split("github.com/", 1)[1].strip("/").strip()
+        if slug.count("/") == 1:
+            slugs.append((r, slug))
+    results = {}
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        futs = {ex.submit(_probe_repo, s): slug for _, s in slugs}
+        for f in as_completed(futs):
+            res = f.result()
+            results[res["slug"]] = res
+
+    out = []
+    for r, slug in slugs:
+        d = results.get(slug) or {"error": "no result"}
+        if d.get("error"):
+            out.append({"name": r["name"], "state": "error", "detail": d["error"]})
             continue
-        pushed = info.get("pushed_at") or ""
-        archived = bool(info.get("archived"))
-        lic = ((info.get("license") or {}) or {}).get("spdx_id") or ""
-        stars = info.get("stargazers_count")
-        rel, _ = gh_api("repos/%s/releases/latest" % slug)
-        tag = (rel or {}).get("tag_name") or ""
+        pushed, archived, lic = d["pushed"], d["archived"], d["license"]
+        stars, tag = d["stars"], d["release"]
         age_days = 9999
         if pushed:
             try:
@@ -80,11 +112,9 @@ def audit_github(con, limit=60, pause=0.15):
             " license=COALESCE(NULLIF(license,''),?), notes=?, updated_at=? WHERE id=?",
             (tag or r["version"] or "", life, kb.now(), lic, notes, kb.now(), r["id"]))
         if life in ("expired", "deprecated"):
-            kb.add_event(con, r["id"], "deprecated" if archived else "noted",
-                         "审计：%s" % notes)
+            kb.add_event(con, r["id"], "deprecated" if archived else "noted", "审计：%s" % notes)
         out.append({"name": r["name"], "state": life, "detail": notes,
                     "age": age_days, "stars": stars, "license": lic})
-        time.sleep(pause)
     con.commit()
     return out
 

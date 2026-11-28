@@ -8,6 +8,27 @@
 
 ---
 
+
+## 配套技能包（本系列）
+
+知识库背后的专业技能已拆分为独立仓库，可直接安装使用（Agent Skills 格式，Claude Code / Codex 通用）：
+
+| 仓库 | 内容 | 技能数 |
+|---|---|---|
+| [codex-cli-skills](https://github.com/your-org/codex-cli-skills) | 非交互驱动 Codex / Grok / Kimi / Hermes CLI | 4 |
+| [mathmodel-paper-skills](https://github.com/your-org/mathmodel-paper-skills) | 数学建模竞赛论文全流程（CUMCM/MCM） | 10 |
+| [docx-automation-skills](https://github.com/your-org/docx-automation-skills) | Word 精确编辑 + 后台窗口截图 | 2 |
+| [packet-tracer-skill](https://github.com/your-org/packet-tracer-skill) | Cisco Packet Tracer 自动化 | 1 |
+| [data-mining-lab-report-skill](https://github.com/your-org/data-mining-lab-report-skill) | 数据挖掘实验报告生成 | 1 |
+| [agent-memory-skills](https://github.com/your-org/agent-memory-skills) | Agent 长期记忆管理 | 2 |
+
+安装任意一个：
+
+```bash
+git clone https://github.com/your-org/<repo>.git /tmp/skills
+cp -r /tmp/skills/skills/* ~/.agents/skills/
+```
+
 ## 它能解决什么问题
 
 | 痛点 | 本项目的做法 |
